@@ -537,3 +537,45 @@ class FirebaseService:
             {**task, 'id': task_id}
             for task_id, task in tasks.items()
         ]
+        
+        return tasks_list
+    
+    def create_task_template(self, title, reward, category='General', description=''):
+        '''Create new task template'''
+        tasks_ref = self.db.child('tasks')
+        
+        task_id = str(uuid.uuid4())
+        task_data = {
+            'title': title,
+            'reward': reward,
+            'category': category,
+            'description': description,
+            'created_at': datetime.datetime.now(datetime.timezone.utc).isoformat
+        }
+        
+        tasks_ref.child(task_id).set(task_data)
+        return task_id
+    
+    def update_task(self, task_id, updates):
+        '''Update an existing task template'''
+        task_ref = self.db.child('tasks').child(task_id)
+        
+        task = task_ref.get()
+        if not task:
+            raise Exception('Task not found')
+        
+        task_ref.update(updates)
+        return True
+    
+    def delete_task(self, task_id):
+        '''Delete a task template'''
+        task_ref = self.db.child('tasks').child(task_id)
+        
+        task = task_ref.get()
+        if not task:
+            raise Exception('Task not found')
+        
+        task_ref.delete()
+        return True
+    
+    # User management methods

@@ -740,3 +740,34 @@ class FirebaseService:
     def get_screentime_analytics(self):
         '''Get analytics about screentime usage'''
         pass
+    
+    # admin logs methods
+    
+    def log_admin_action(self, admin_id, action_type, details=None):
+        '''Log an action taken/performed by an admin'''
+        logs_ref = self.db.child('admin_logs')
+        
+        log_id = str(uuid.uuid4())
+        log_data = {
+            'admin_id': admin_id,
+            'action_type': action_type,
+            'details': details or {},
+            'timestamp': firestore.SERVER_TIMESTAMP,
+            'ip_address': request.remote_addr if 'request' in globals() else None
+        }
+        
+        logs_ref.child(log_id).set(log_data)
+        return log_id
+    
+    def get_admin_logs(self, limit=100):
+        '''Get admin activity logs'''
+        logs_ref = self.db.child('admin_logs')
+        logs = logs_ref.get() or {}
+        
+        logs_list = [
+            {**log, 'id': log_id}
+            for log_id, log in logs.items()
+        ]
+        
+        logs_list.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+        return logs_list[:limit]

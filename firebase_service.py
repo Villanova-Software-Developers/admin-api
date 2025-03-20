@@ -1,6 +1,8 @@
 # firebase_service.py
 import firebase_admin
-from firebase_admin import credentials, firestore, auth, storage
+from firebase_admin import credentials, firestore, auth, storage, db
+import hashlib
+from werkzeug.utils import secure_filename
 import uuid
 import datetime
 import tempfile
@@ -468,3 +470,31 @@ class FirebaseService:
         except Exception as e:
             print(f"Error in upload_profile_picture: {e}")
             raise e
+    
+    # Admin auth Methods
+    def register_admin(self, email, password, name):
+        '''Register a new admin user'''
+        # Check if admin with this email alr exists
+        admins_ref = self.db.child('admins')
+        admins = admins_ref.get() or {}
+        
+        for admin_id, main in admins.items():
+            if admins.get('email') == email:
+                raise Exception('Admin with this email already exists')
+        
+        admin_id = str(uuid.uuid4()) # create new admin user
+        
+        hashed_password = hashlib.sha256(password.encode()).hexdigest() # hashes the password, to change in prod for more secure hashing
+        
+        admin_data = {
+            'id': admin_id,
+            'email': email,
+            'password': hashed_password, # to change in prod
+            'name': name,
+            'created_at': datetime.datetime.now(datetime.timezone.utc).isoformat()
+        }
+        
+        admins_ref.child(admin_id).set(admin_data)
+        
+        admin_data.pop('password')
+        return admin_data

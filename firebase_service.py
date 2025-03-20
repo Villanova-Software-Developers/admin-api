@@ -492,7 +492,7 @@ class FirebaseService:
             'email': email,
             'password': hashed_password, # to change in prod
             'name': name,
-            'created_at': datetime.datetime.now(datetime.timezone.utc).isoformat()
+            'created_at': datetime.datetime.now(datetime.timezone.utc).isoformat() # look into using firebase server timestamp
         }
         
         admins_ref.child(admin_id).set(admin_data)
@@ -579,3 +579,164 @@ class FirebaseService:
         return True
     
     # User management methods
+    
+    def get_all_users(self):
+        '''Get all users with basic info'''
+        users_ref = self.db.child('users')
+        users = users_ref.get() or {}
+        
+        users_list = [] # filter sensitive info and conv to list
+        for user_id, user in users.items():
+            filtered_user = {
+                'id': user_id,
+                'username': user.get('username', ''),
+                'email': user.get('email', ''),
+                'created_at': user.get('created_at', ''),
+                'last_login': user.get('last_login', ''), # pretty sure we don't have this attribute but will test and can be added in future pretty easily
+                'suspended': user.get('suspended', False)
+            }
+            users_list.append(filtered_user)
+        
+        return users_list
+    
+    def get_user_tasks(self, user_id):
+        '''Get tasks associated with specific user'''
+        user_tasks_ref = self.db.child('user_tasks').child(user_id)
+        user_tasks = user_tasks_ref.get() or {}
+        
+        tasks_list = [
+            {**task, 'id': task_id}
+            for task_id, task in user_tasks.items()
+        ]
+        
+        return tasks_list
+    
+    def get_user_screentime(self, user_id):
+        '''Get screentime data for a user'''
+        screentime_ref = self.db.child('screentime').child(user_id)
+        screentime = screentime_ref.get() or {}
+        
+        return screentime
+
+    def reset_user_password(self, user_id, new_password):
+        '''Reset a user's password'''
+        user_ref = self.db.child('users').child(user_id)
+        
+        user = user_ref.get()
+        if not user:
+            raise Exception('User not found')
+        
+        hashed_password = hashlib.sha256(new_password.encode()).hexdigest() # check back on hashing password functionality
+        
+        user_ref.update({'password': hashed_password})
+        return True
+    
+    def suspend_user(self, user_id, suspend=True):
+        '''Suspend or unsuspend a user account'''
+        user_ref = self.db.child('users').child(user_id)
+        
+        user = user_ref.get()
+        if not user:
+            raise Exception('User not found')
+        
+        user_ref.update({'suspend': suspend})
+        return True
+    
+    # Post Management methods
+    
+    def get_all_posts(self, limit=50):
+        '''Get all posts with a specific limit'''
+        posts_ref = self.db.child('posts')
+        posts = posts_ref.get() or {}
+        
+        posts_list = [
+            {**post, 'post_id': post_id}
+            for post_id, post in posts.items()
+        ]
+        
+        posts_list.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+        return posts_list[:limit]
+    
+    def delete_post(self, post_id):
+        '''Delete a specifified post'''
+        post_ref = self.db.child('posts').child(post_id)
+        post = post_ref.get() or {}
+        
+        if not post:
+            raise Exception('POst not found')
+        
+        post_ref.delete()
+        
+        self.db.child('comments').child(post_id).delete()
+        self.db.child('likes').child(post_id).delete()
+        return True
+
+    def get_analytics_summary(self): # Can be refactored
+        '''Get summary analytics for the dashboard'''
+        users_count = len(self.db.child('users').get() or {})
+        tasks_count = len(self.db.child('tasks').get() or {})
+        posts_count = len(self.db.child('posts').get() or {})
+        
+        users = self.db.child('users').get() or {}
+        active_users = 0
+        seven_days_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=7)
+        
+        for user in users.values():
+            if user.get('last_login'):
+                try:
+                    last_login = datetime.datetime.fromisoformat(user.get('last_login'))
+                    if last_login > seven_days_ago:
+                        active_users += 1
+                except (ValueError, TypeError):
+                    pass
+        
+        all_user_tasks = self.db.child('user_tasks').get() or {} # check if valid
+        completed_tasks = 0
+        
+        for user_tasks in all_user_tasks.values():
+            for task in user_tasks.values():
+                if task.get('completed', False):
+                    completed_tasks += 1
+        
+        return {
+            'total_users': users_count,
+            'active_users_7d': active_users,
+            'total_tasks': tasks_count,
+            'completed_tasks': completed_tasks,
+            'posts_count': posts_count
+        }
+    
+    def get_task_analytics(self):
+        '''Get analytics about tasks usage'''
+        all_tasks = self.db.child('tasks').get() or {}
+        all_user_tasks = self.db.child('user_tasks').get() or {}
+        
+        categories = {}
+        for task in all_tasks.values():
+            category = task.get('category', 'General')
+            categories[category] = categories.get(category, 0) + 1
+        
+        # get completion data
+        completion_rate = 0
+        total_user_tasks = 0
+        completed_user_tasks = 0
+        
+        for user_tasks in all_user_tasks.values():
+            for task in user_tasks.values():
+                total_user_tasks += 1
+                if task.get('completed', False):
+                    completed_user_tasks += 1
+        
+        if total_user_tasks > 0:
+            completion_rate = (completed_user_tasks/total_user_tasks)*100
+        
+        return {
+            'categories': [{'name': k, 'count': v} for k, v in categories.items()],
+            'completion_rate': completion_rate,
+            'total_tasks_assigned': total_user_tasks,
+            'tasks_completed': completed_user_tasks
+        }
+    
+    def get_screentime_analytics(self):
+        '''Get analytics about screentime usage'''
+        pass

@@ -472,6 +472,7 @@ class FirebaseService:
             raise e
     
     # Admin auth Methods
+    
     def register_admin(self, email, password, name):
         '''Register a new admin user'''
         # Check if admin with this email alr exists
@@ -498,3 +499,41 @@ class FirebaseService:
         
         admin_data.pop('password')
         return admin_data
+    
+    def login_admin(self, email, password):
+        '''Authenticate an admin user'''
+        admins_ref = self.db.child('admins')
+        admins = admins_ref.get() or {}
+        
+        # hash provided password for comp
+        hashed_password = hashlib.sha256(password.encode()).hexdigest()
+        
+        for admin_id, admin in admins.items():
+            if admin.get('email') == email and admin.get('password') == hashed_password:
+                admin_copy = dict(admin)
+                admin_copy.pop('password') # remove password from returned obj
+                return admin_copy
+        
+        return None
+
+    def get_admin(self, admin_id):
+        '''Get admin by id'''
+        admin = self.db.child('admins').child(admin_id).get()
+        if admin:
+            admin_copy = dict(admin)
+            admin_copy.pop('password', None)
+            return admin_copy
+        return None
+
+    # Task management methods
+    
+    def get_all_tasks(self):
+        '''get all task templates'''
+        tasks_ref = self.db.child('tasks')
+        tasks = tasks_ref.get() or {}
+        
+        # convert dict to list with ID included
+        tasks_list = [
+            {**task, 'id': task_id}
+            for task_id, task in tasks.items()
+        ]

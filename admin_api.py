@@ -4,7 +4,8 @@ from flask_cors import CORS
 import os
 import secrets
 import jwt
-from datetime import datetime, timedelta
+import datetime
+from datetime import timedelta
 from functools import wraps
 
 app = Flask(__name__)
@@ -38,5 +39,62 @@ def token_required(f):
             return jsonify({'success': False, 'message': 'Token is invalid'}), 401
         
         return f(current_admin, *args, **kwargs)
-
     return decorated
+
+# admin auth routes
+@app.route('/api/admin/login', methods=['POST'])
+def admin_login():
+    try:
+        data = request.json
+        email = data.get('email')
+        password = data.get('password')
+        
+        admin_user = firebase_service.login_admin(email, password)
+        if not admin_user:
+            return jsonify({'success': False, 'error': 'Invalid credentials'}), 401
+        
+        # gen JWT token
+        token = jwt.encode({
+            'admin_id': admin_user['id'],
+            'exp': datetime.datetime.now(datetime.timezone.utc) + timedelta(hours=24)
+        }, app.config['SECRET_KEY'], algorithm='HS256')
+        
+        return jsonify({
+            'success': True,
+            'token': token,
+            'admin': {
+                'id': admin_user['id'],
+                'email': admin_user['email'],
+                'name': admin_user.get('name', '')
+            }
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+@app.route('/api/admin/register', methods=['POST'])
+def admin_register():
+    try:
+        data = request.json
+        email = data.get('email')
+        password = data.get('password')
+        name = data.get('name')
+        registration_key = data.get('registrationKey')
+        
+        # validate registration key
+        if registration_key != ADMIN_REGISTRATION_KEY:
+            return jsonify({'success': False, 'error': 'Invalid registration key'}), 403
+        
+        # Register admin
+        admin_user = firebase_service.register_admin(email, password, name)
+        
+        # Log admin creation
+        firebase_service.log_admin_action(admin_user['id'], 'ADMIN_CREATED', {
+            'admin_email': email,
+            'created_at': datetime.datetime.now(datetime.timezone.utc).isoformat()
+        })
+        
+        return jsonify({'success': True, 'admin': admin_user})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+# task management routes

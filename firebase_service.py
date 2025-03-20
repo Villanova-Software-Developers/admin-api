@@ -475,55 +475,81 @@ class FirebaseService:
     
     def register_admin(self, email, password, name):
         '''Register a new admin user'''
-        # Check if admin with this email alr exists
-        admins_ref = self.db.child('admins')
-        admins = admins_ref.get() or {}
-        
-        for admin_id, main in admins.items():
-            if admins.get('email') == email:
+        try:
+            # Check if admin with this email alr exists
+            admins_query = self.db.collection('admins').where('email', '==', email).limit(1).stream()
+            if list(admins_query):
                 raise Exception('Admin with this email already exists')
-        
-        admin_id = str(uuid.uuid4()) # create new admin user
-        
-        hashed_password = hashlib.sha256(password.encode()).hexdigest() # hashes the password, to change in prod for more secure hashing
-        
-        admin_data = {
-            'id': admin_id,
-            'email': email,
-            'password': hashed_password, # to change in prod
-            'name': name,
-            'created_at': datetime.datetime.now(datetime.timezone.utc).isoformat() # look into using firebase server timestamp
-        }
-        
-        admins_ref.child(admin_id).set(admin_data)
-        
-        admin_data.pop('password')
-        return admin_data
+            
+            admins_ref = self.db.collection('admins').document()
+            admin_id = admins_ref.id
+            
+            hashed_password = hashlib.sha256(password.encode()).hexdigest() # hashes the password, to change in prod for more secure hashing
+            
+            admin_data = {
+                'id': admin_id,
+                'email': email,
+                'password': hashed_password, # to change in prod
+                'name': name,
+                'created_at': firestore.SERVER_TIMESTAMP
+            }
+            
+            admins_ref.set(admin_data)
+            self.log_admin_action(admin_id, 'ADMIN_CREATED', {
+                'admin_email': email
+            })
+            admin_return = admin_data.copy()
+            admin_return.pop('password')
+            return admin_return
+        except Exception as e:
+            print(f'Error in register_admin: {e}')
+            raise(e)
     
     def login_admin(self, email, password):
         '''Authenticate an admin user'''
-        admins_ref = self.db.child('admins')
-        admins = admins_ref.get() or {}
-        
-        # hash provided password for comp
-        hashed_password = hashlib.sha256(password.encode()).hexdigest()
-        
-        for admin_id, admin in admins.items():
-            if admin.get('email') == email and admin.get('password') == hashed_password:
-                admin_copy = dict(admin)
-                admin_copy.pop('password') # remove password from returned obj
-                return admin_copy
-        
-        return None
+        try: 
+            hashed_password = hashlib.sha256(password.encode()).hexdigest()
+            
+            admins_query = self.db.collection('admins').where('email', '==', email).limit(1).stream()
+            admins = list(admins_query)
+            
+            if not admins:
+                return None
+            
+            admin_doc = admins[0]
+            admin_data = admin_doc.to_dict()
+            
+            if admin_data.get('password') != hashed_password:
+                return None
+            
+            admin_return = admin_data.copy()
+            admin_return.pop('password')
+            admin_return['id'] = admin_doc.id
+            
+            return admin_return
+        except Exception as e:
+            print(f'Error in login_admin: {e}')
+            raise(e)
 
     def get_admin(self, admin_id):
         '''Get admin by id'''
-        admin = self.db.child('admins').child(admin_id).get()
-        if admin:
-            admin_copy = dict(admin)
-            admin_copy.pop('password', None)
-            return admin_copy
-        return None
+        try:
+            admin_doc = self.db.collection('admins').document(admin_id).get()
+            
+            if not admin_doc.exists:
+                return None
+            
+            admin_data = admin_doc.to_dict()
+            
+            # remove passw from return obj
+            admin_return = admin_data.copy()
+            admin_return.pop('password', None)
+            admin_return['id'] = admin_doc.id
+            
+            return admin_return
+        except Exception as e:
+            print(f'Error in get_admin: {e}')
+            raise(e)
 
     # Task management methods
     

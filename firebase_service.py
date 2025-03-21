@@ -471,7 +471,7 @@ class FirebaseService:
             print(f"Error in upload_profile_picture: {e}")
             raise e
     
-    # Admin auth Methods
+    # Admin auth methods
     
     def register_admin(self, email, password, name):
         '''Register a new admin user'''
@@ -555,245 +555,379 @@ class FirebaseService:
     
     def get_all_tasks(self):
         '''get all task templates'''
-        tasks_ref = self.db.child('tasks')
-        tasks = tasks_ref.get() or {}
-        
-        # convert dict to list with ID included
-        tasks_list = [
-            {**task, 'id': task_id}
-            for task_id, task in tasks.items()
-        ]
-        
-        return tasks_list
+        try:
+            tasks = []
+            task_query = self.db.collection('tasks').stream()
+            
+            for doc in task_query:
+                task_data = doc.to_dict()
+                task_data['id'] = doc.id
+                tasks.append(task_data)
+            
+            return tasks
+        except Exception as e:
+            print(f'Error in get_all_tasks: {e}')
+            raise e
     
-    def create_task_template(self, title, reward, category='General', description=''):
+    def create_task_template(self, title, reward, category='General', description=''): # ? Maybe not to use
         '''Create new task template'''
-        tasks_ref = self.db.child('tasks')
-        
-        task_id = str(uuid.uuid4())
-        task_data = {
-            'title': title,
-            'reward': reward,
-            'category': category,
-            'description': description,
-            'created_at': datetime.datetime.now(datetime.timezone.utc).isoformat
-        }
-        
-        tasks_ref.child(task_id).set(task_data)
-        return task_id
+        try:
+            tasks_ref = self.db.collection('tasks').document()
+            
+            task_data = {
+                'title': title,
+                'reward': reward,
+                'category': category,
+                'description': description,
+                'created_at': firestore.SERVER_TIMESTAMP
+            }
+            
+            tasks_ref.set(task_data)
+            return tasks_ref.id
+        except Exception as e:
+            print(f'Error in create_task_template: {e}')
+            raise e
     
     def update_task(self, task_id, updates):
         '''Update an existing task template'''
-        task_ref = self.db.child('tasks').child(task_id)
-        
-        task = task_ref.get()
-        if not task:
-            raise Exception('Task not found')
-        
-        task_ref.update(updates)
-        return True
+        try:
+            task_ref = self.db.collection('tasks').document(task_id)
+            task_doc = task_ref.get()
+            
+            if not task_doc.exists:
+                raise Exception('Task not found')
+            
+            updates['UpdatedAt'] = firestore.SERVER_TIMESTAMP
+            task_ref.update(updates)
+            return True
+        except Exception as e:
+            print(f'Error in update_task: {e}')
+            raise e
     
     def delete_task(self, task_id):
         '''Delete a task template'''
-        task_ref = self.db.child('tasks').child(task_id)
-        
-        task = task_ref.get()
-        if not task:
-            raise Exception('Task not found')
-        
-        task_ref.delete()
-        return True
+        try:
+            task_ref = self.db.collection('tasks').document(task_id)
+            task_doc = task_ref.get()
+            
+            if not task_doc.exists:
+                raise Exception('Task not found')
+            
+            task_ref.delete()
+            return True
+        except Exception as e:
+            print(f'Error in delete_task: {e}')
+            raise e
     
     # User management methods
     
     def get_all_users(self):
         '''Get all users with basic info'''
-        users_ref = self.db.child('users')
-        users = users_ref.get() or {}
-        
-        users_list = [] # filter sensitive info and conv to list
-        for user_id, user in users.items():
-            filtered_user = {
-                'id': user_id,
-                'username': user.get('username', ''),
-                'email': user.get('email', ''),
-                'created_at': user.get('created_at', ''),
-                'last_login': user.get('last_login', ''), # pretty sure we don't have this attribute but will test and can be added in future pretty easily
-                'suspended': user.get('suspended', False)
-            }
-            users_list.append(filtered_user)
-        
-        return users_list
+        try:
+            users = []
+            users_query = self.db.collection('users').stream()
+            
+            for doc in users_query:
+                user_data = doc.to_dict()
+                filtered_user = {
+                    'id': doc.id,
+                    'username': user_data.get('username', ''),
+                    'email': user_data.get('email', ''),
+                    'createdAt': user_data.get('createdAt', ''),
+                    'lastLogin': user_data.get('lastLogin', ''),
+                    'suspended': user_data.get('suspended', False)
+                }
+                users.append(filtered_user)
+            return users
+        except Exception as e:
+            print(f'Error in get_all_users: {e}')
+            raise(e)
     
     def get_user_tasks(self, user_id):
         '''Get tasks associated with specific user'''
-        user_tasks_ref = self.db.child('user_tasks').child(user_id)
-        user_tasks = user_tasks_ref.get() or {}
-        
-        tasks_list = [
-            {**task, 'id': task_id}
-            for task_id, task in user_tasks.items()
-        ]
-        
-        return tasks_list
+        try:
+            tasks = []
+            tasks_query = self.db.collection('user_tasks').where('userId', '==', user_id).stream()
+            
+            for doc in tasks_query:
+                task_data = doc.to_dict()
+                task_data['id'] = doc.id
+                tasks.append(task_data)
+            
+            return tasks
+        except Exception as e:
+            print(F'Error in get_user_tasks: {e}')
+            raise e
     
     def get_user_screentime(self, user_id):
         '''Get screentime data for a user'''
-        screentime_ref = self.db.child('screentime').child(user_id)
-        screentime = screentime_ref.get() or {}
-        
-        return screentime
+        try:
+            screentime_query = self.db.collection('screentime').where('userId', '==', user_id).stream()
+            screentime_data = [doc.to_dict() for doc in screentime_query]
+            
+            return screentime_data
+        except Exception as e:
+            print(f'Error in get_user_screentime: {e}')
+            raise(e)
 
     def reset_user_password(self, user_id, new_password):
         '''Reset a user's password'''
-        user_ref = self.db.child('users').child(user_id)
-        
-        user = user_ref.get()
-        if not user:
-            raise Exception('User not found')
-        
-        hashed_password = hashlib.sha256(new_password.encode()).hexdigest() # check back on hashing password functionality
-        
-        user_ref.update({'password': hashed_password})
-        return True
+        try:
+            user_ref = self.db.collection('users').document(user_id) # TODO: in production environment, it would be best to use firebase auth to reset password
+            
+            user_doc = user_ref.get()
+            if not user_doc.exists:
+                raise Exception('User not found')
+            
+            hashed_password = hashlib.sha256(new_password.encode()).hexdigest() # check back on hashing password functionality
+            
+            user_ref.update({'password': hashed_password})
+            return True
+        except Exception as e:
+            print(f'Error in reset_user_password: {e}')
+            raise(e)
     
     def suspend_user(self, user_id, suspend=True):
         '''Suspend or unsuspend a user account'''
-        user_ref = self.db.child('users').child(user_id)
-        
-        user = user_ref.get()
-        if not user:
-            raise Exception('User not found')
-        
-        user_ref.update({'suspend': suspend})
-        return True
+        try:
+            user_ref = self.db.collection('users').document(user_id)
+            
+            user_doc = user_ref.get()
+            if not user_doc.exists:
+                raise Exception('User not found')
+            
+            user_ref.update({'suspended': suspend})
+            return True
+        except Exception as e:
+            print(f'Error in suspend_user: {e}')
+            raise e
     
     # Post Management methods
     
     def get_all_posts(self, limit=50):
         '''Get all posts with a specific limit'''
-        posts_ref = self.db.child('posts')
-        posts = posts_ref.get() or {}
-        
-        posts_list = [
-            {**post, 'post_id': post_id}
-            for post_id, post in posts.items()
-        ]
-        
-        posts_list.sort(key=lambda x: x.get('created_at', ''), reverse=True)
-        return posts_list[:limit]
+        try:
+            posts = []
+            posts_query = (
+                self.db.collection('posts')
+                .order_by('createdAt', direction=firestore.Query.DESCENDING)
+                .limit(limit)
+                .stream()
+            )
+            
+            for doc in posts_query:
+                post_data = doc.to_dict()
+                post_data['id'] = doc.id
+                
+                if 'createdAt' in post_data and post_data['createdAt']:
+                    post_data['createdAt'] = post_data['createdAt'].isoformat() # converts timestamp to string
+                
+                posts.append(post_data)
+            return posts
+        except Exception as e:
+            print(f'Error in suspend_user: {e}')
+            raise e
     
     def delete_post(self, post_id):
-        '''Delete a specifified post'''
-        post_ref = self.db.child('posts').child(post_id)
-        post = post_ref.get() or {}
-        
-        if not post:
-            raise Exception('POst not found')
-        
-        post_ref.delete()
-        
-        self.db.child('comments').child(post_id).delete()
-        self.db.child('likes').child(post_id).delete()
-        return True
+        '''Delete a specified post'''
+        try:
+            post_ref = self.db.collection('posts').document(post_id)
+            post_doc = post_ref.get()
+            
+            if not post_doc.exists:
+                raise Exception('Post not found')
+            
+            post_ref.delete() # delete post
+            
+            # ! Next logic will need to be changed depending on how the collections are stored (likes and comments), TBD
+            comments_query = self.db.collection('comments').where('post_id', '==', post_id).stream()
+            for comment_doc in comments_query:
+                comment_doc.reference.delete()  # Use reference to delete the comment
+            
+            return True
+        except Exception as e:
+            print(f'Error in delete_post: {e}')
+            raise e
+
+    # Analytics methods
 
     def get_analytics_summary(self): # Can be refactored
         '''Get summary analytics for the dashboard'''
-        users_count = len(self.db.child('users').get() or {})
-        tasks_count = len(self.db.child('tasks').get() or {})
-        posts_count = len(self.db.child('posts').get() or {})
-        
-        users = self.db.child('users').get() or {}
-        active_users = 0
-        seven_days_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=7)
-        
-        for user in users.values():
-            if user.get('last_login'):
-                try:
-                    last_login = datetime.datetime.fromisoformat(user.get('last_login'))
-                    if last_login > seven_days_ago:
-                        active_users += 1
-                except (ValueError, TypeError):
-                    pass
-        
-        all_user_tasks = self.db.child('user_tasks').get() or {} # check if valid
-        completed_tasks = 0
-        
-        for user_tasks in all_user_tasks.values():
-            for task in user_tasks.values():
-                if task.get('completed', False):
-                    completed_tasks += 1
-        
-        return {
-            'total_users': users_count,
-            'active_users_7d': active_users,
-            'total_tasks': tasks_count,
-            'completed_tasks': completed_tasks,
-            'posts_count': posts_count
-        }
+        try:
+            # count users
+            users_query = self.db.collection('users').stream()
+            users_count = len(list(users_query))
+            
+            # count tasks
+            tasks_query = self.db.collection('tasks').stream()
+            tasks_count = len(list(tasks_query))
+            
+            # count posts
+            posts_query = self.db.collection('posts').stream()
+            posts_count = len(list(posts_query))
+            
+            # count active users (past 7 days)
+            seven_days_ago = datetime.datetime.now() - datetime.timedelta(days=7)
+            active_users_query = (
+                self.db.collection('users')
+                .where('lastLogin', '>=', seven_days_ago)
+                .stream()
+            )
+            active_users_count = len(list(active_users_query))
+            
+            # count completed tasks
+            completed_tasks_query = (
+                self.db.collection('tasks')
+                .where('completed', '==', True ) # ? Not sure logic here will work properly, again depends on how the db is structured. To be reviewed at next meeting
+                .stream()
+            )
+            completed_tasks_count = len(list(completed_tasks_query))
+            
+            return {
+                'total_users': users_count,
+                'active_users_7d': active_users_count,
+                'total_tasks': tasks_count,
+                'completed_tasks': completed_tasks_count,
+                'posts_count': posts_count
+            }
+        except Exception as e:
+            print(f'Error in get_analytics_summary: {e}')
+            raise e
     
     def get_task_analytics(self):
         '''Get analytics about tasks usage'''
-        all_tasks = self.db.child('tasks').get() or {}
-        all_user_tasks = self.db.child('user_tasks').get() or {}
-        
-        categories = {}
-        for task in all_tasks.values():
-            category = task.get('category', 'General')
-            categories[category] = categories.get(category, 0) + 1
-        
-        # get completion data
-        completion_rate = 0
-        total_user_tasks = 0
-        completed_user_tasks = 0
-        
-        for user_tasks in all_user_tasks.values():
-            for task in user_tasks.values():
-                total_user_tasks += 1
-                if task.get('completed', False):
-                    completed_user_tasks += 1
-        
-        if total_user_tasks > 0:
-            completion_rate = (completed_user_tasks/total_user_tasks)*100
-        
-        return {
-            'categories': [{'name': k, 'count': v} for k, v in categories.items()],
-            'completion_rate': completion_rate,
-            'total_tasks_assigned': total_user_tasks,
-            'tasks_completed': completed_user_tasks
-        }
+        try:
+            tasks_query = self.db.collection('tasks').stream() # get all tasks and then analyse categories
+            
+            # count tasks by category
+            categories = dict()
+            for doc in tasks_query:
+                task = doc.to_dict()
+                category = task.get('category', 'General')
+                categories[category] = categories.get(category, 0) + 1
+            
+            # Get completion rate
+            total_user_tasks_query = self.db.collection('user_tasks').stream()
+            total_user_tasks_count = len(list(total_user_tasks_query))
+            
+            completed_user_tasks_query = (
+                self.db.collection('user_tasks')
+                .where('completed', '==', True)
+                .stream()
+            )
+            completed_user_tasks_count = len(list(completed_user_tasks_query))
+            
+            completion_rate = 0
+            if total_user_tasks_count > 0:
+                completion_rate = (completed_user_tasks_count / total_user_tasks_count) * 100
+            
+            return {
+                'categories': [{'name': k, 'count': v} for k, v in categories.items()],
+                'completion_rate': completion_rate,
+                'total_tasks_assigned': total_user_tasks_count,
+                'tasks_completed': completed_user_tasks_count
+            }
+        except Exception as e:
+            print(f'Error in get_task_analytics: {e}')
+            raise e
     
-    def get_screentime_analytics(self):
+    def get_screentime_analytics(self): # ! This method uses a lot of db logic which might not follow the db structure, TO CHANGE to match associated structure
         '''Get analytics about screentime usage'''
-        pass
+        try:
+            # get all screentime records
+            screentime_query = self.db.collection('screentime').stream()
+            screentime_records = [doc.to_dict() for doc in screentime_query]
+            
+            # calculate average daily screentime
+            total_time = 0
+            record_count = 0
+            
+            for record in screentime_records:
+                total_time += record.get('duration', 0)
+                record_count += 1
+            
+            avg_screentime = 0
+            if record_count > 0:
+                avg_screentime = total_time / record_count
+            
+            # calculate screentime by day of the week # ! Start of an intended feature of seeing screentime by day, unlikely to work with current structure
+            days_of_week = {
+            0: 'Monday',
+            1: 'Tuesday',
+            2: 'Wednesday',
+            3: 'Thursday',
+            4: 'Friday',
+            5: 'Saturday',
+            6: 'Sunday'
+            }
+            
+            screentime_by_day = {day: 0 for day in days_of_week.values()}
+            counts_by_day = {day: 0 for day in days_of_week.values()}
+            
+            for record in screentime_records:
+                if 'timestamp' in record and record['timestamp']:
+                    timestamp = record['timestamp']
+                    if isinstance(timestamp, str):
+                        timestamp = datetime.datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                    day_name = days_of_week[timestamp.weekday()]
+                    screentime_by_day[day_name] += record.get('duration', 0)
+                    counts_by_day[day_name] += 1
+            
+            # calculate average by day
+            avg_by_day = dict()
+            for day in days_of_week.values():
+                if counts_by_day[day] > 0:
+                    avg_by_day[day] = screentime_by_day[day] / counts_by_day[day]
+                else:
+                    avg_by_day[day] = 0
+            
+            return {
+                'average_daily_screentime': avg_screentime,
+                'screentime_by_day': [{'day': day, 'average': average} for day, average in avg_by_day.items()]
+            }
+        except Exception as e:
+            print(f'Error in get_screentime_analytics: {e}')
+            raise e
     
-    # admin logs methods
+    # Admin logs methods
     
-    def log_admin_action(self, admin_id, action_type, details=None):
+    def log_admin_action(self, admin_id, action_type, details=None, ip_address=None):
         '''Log an action taken/performed by an admin'''
-        logs_ref = self.db.child('admin_logs')
-        
-        log_id = str(uuid.uuid4())
-        log_data = {
-            'admin_id': admin_id,
-            'action_type': action_type,
-            'details': details or {},
-            'timestamp': firestore.SERVER_TIMESTAMP,
-            'ip_address': request.remote_addr if 'request' in globals() else None
-        }
-        
-        logs_ref.child(log_id).set(log_data)
-        return log_id
+        try:
+            log_ref = self.db.collection('admin_logs').document()
+            
+            log_data = {
+                'admin_id': admin_id,
+                'action_type': action_type,
+                'details': details or dict(),
+                'timestamp': firestore.SERVER_TIMESTAMP,
+                'ip_address': ip_address # to get from the request in the actual route handler
+            }
+            
+            log_ref.set(log_data)
+            return log_ref.id
+        except Exception as e:
+            print(f'Error in log_admin_actions: {e}')
+            raise e
     
     def get_admin_logs(self, limit=100):
         '''Get admin activity logs'''
-        logs_ref = self.db.child('admin_logs')
-        logs = logs_ref.get() or {}
-        
-        logs_list = [
-            {**log, 'id': log_id}
-            for log_id, log in logs.items()
-        ]
-        
-        logs_list.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
-        return logs_list[:limit]
+        try:
+            logs = []
+            logs_query = (
+                self.db.collection('admin_logs')
+                .order_by('timestamp', direction=firestore.Query.DESCENDING)
+                .limit(limit)
+                .stream())
+            
+            for doc in logs_query:
+                log_data = doc.to_dict()
+                log_data['id'] = doc.id
+                if 'timestamp' in log_data and log_data['timestamp']: # convert time stamp to string if it exists
+                    log_data['timestamp'] = log_data['timestamp'].isoformat()
+                logs.append(log_data)
+            
+            return logs
+        except Exception as e:
+            print(f'Error in get_admins_logs: {e}')
+            raise e

@@ -1,6 +1,6 @@
 # firebase_service.py
 import firebase_admin
-from firebase_admin import credentials, firestore, auth, storage, db
+from firebase_admin import credentials, firestore, auth, storage
 import hashlib
 import uuid
 import datetime
@@ -104,6 +104,30 @@ class FirebaseService:
             return user_data
         except Exception as e:
             print(f"Error in get_user_profile: {e}")
+            raise e
+    
+    def get_user_posts(self, user_id):
+        '''Get all posts created by a specific user'''
+        try:
+            # query posts by the user
+            posts_query = self.db.collection('posts').where('userId', '==', user_id).stream()
+            posts = []
+            
+            for doc in posts_query:
+                post_data = doc.to_dict()
+                post_data['id'] = doc.id
+                
+                if 'createdAt' in post_data and post_data['createdAt']:
+                    post_data['createdAt'] = post_data['createdAt'].isoformat()
+                
+                post_data['commentCount'] = len(post_data.get('comments', []))
+                post_data['likeCount'] = len(post_data.get('likes', []))
+                
+                posts.append(post_data)
+            
+            return posts
+        except Exception as e:
+            print(f'Error in get_user_posts: {e}')
             raise e
     
     def search_users(self, search_term):

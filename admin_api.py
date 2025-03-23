@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 from firebase_service import FirebaseService
 from flask_cors import CORS
 import os
+from dotenv import load_dotenv
 import secrets
 import jwt
 import datetime
@@ -11,6 +12,10 @@ from functools import wraps
 app = Flask(__name__)
 CORS(app)
 
+# Load environment variables from .env file
+load_dotenv()
+
+# Access environment variables
 app.config['SECRET_KEY'] = os.environ.get('ADMIN_SECRET_KEY', secrets.token_hex(16)) # Secret key for JWT tokens - keep this secure
 ADMIN_REGISTRATION_KEY = os.environ.get('ADMIN_REGISTRATION_KEY', 'villanova-optima-admin-2025') # registration key required to create admin accounts
 

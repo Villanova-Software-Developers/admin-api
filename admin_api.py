@@ -49,7 +49,13 @@ def admin_login():
         email = data.get('email')
         password = data.get('password')
         
+        # validate required fields
+        if not all([email, password]):
+            return jsonify({'success': False, 'error': 'Email and password are required'}), 400
+        
+        # authenticate admin
         admin_user = firebase_service.login_admin(email, password)
+        # check if auth successful
         if not admin_user:
             return jsonify({'success': False, 'error': 'Invalid credentials'}), 401
         
@@ -80,6 +86,10 @@ def admin_register():
         name = data.get('name')
         registration_key = data.get('registrationKey')
         
+        # validate required fields
+        if not all([email, password, name, registration_key]):
+            return jsonify({'success': False, 'error': 'All fields are required'}), 400
+        
         # validate registration key
         if registration_key != ADMIN_REGISTRATION_KEY:
             return jsonify({'success': False, 'error': 'Invalid registration key'}), 403
@@ -87,14 +97,33 @@ def admin_register():
         # Register admin
         admin_user = firebase_service.register_admin(email, password, name)
         
-        # Log admin creation
-        firebase_service.log_admin_action(admin_user['id'], 'ADMIN_CREATED', {
-            'admin_email': email,
-            'created_at': datetime.datetime.now(datetime.timezone.utc).isoformat()
-        })
         
         return jsonify({'success': True, 'admin': admin_user})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
 
-# task management routes
+@app.route('/api/admin/profile', methods=['GET'])
+@token_required
+def admin_profile(current_admin):
+    '''Get the profile of the current admin'''
+    try:
+        admin_id = current_admin['id']
+        admin_data = firebase_service.get_admin(admin_id) # fetch most up-to date info about the admin
+        
+        if not admin_data:
+            return jsonify({
+                'success': False,
+                'error': 'Admin account not found'
+            }), 404
+        
+        return jsonify({
+            'success': True,
+            'admin': admin_data
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'Error retrieving admin profile: {str(e)}'
+        }), 500
+
+

@@ -764,6 +764,79 @@ class FirebaseService:
         except Exception as e:
             print(f'Error in delete_post: {e}')
             raise e
+    
+    def update_post_content(self, post_id, new_content, admin_id=None):
+        '''Update a post's content'''
+        try:
+            post_ref = self.db.collection('posts').document(post_id)
+            post_doc = post_ref.get()
+            
+            if not post_doc.exists:
+                raise Exception('Post not found')
+            
+            old_content = post_doc.to_dict().get('content', '') # keep record for logging purpose
+            
+            # update post
+            post_ref.update({
+                'content': new_content,
+                'editedAt': firestore.SERVER_TIMESTAMP,
+                'editedByAdmin': True
+            })
+            
+            # log action if we have the admin id
+            if admin_id:
+                self.log_admin_action(admin_id, 'POST_EDITED', {
+                    'post_id': post_id,
+                    'old_content_preview': old_content[:50] + '...' if len(old_content) > 50 else old_content,
+                    'new_content_preview': new_content[:50] if len(new_content) > 50 else new_content
+                })
+            
+            return True
+        except Exception as e:
+            print(f'Error in update_post_content: {e}')
+            raise e
+    
+    def delete_comment(self, post_id, comment_id, admin_id=None):
+        '''Delete a comment from a post'''
+        try:
+            post_ref = self.db.collection('posts').document(post_id)
+            post_doc = post_ref.get()
+            
+            if not post_doc.exists:
+                raise Exception('Post not found')
+            
+            post_data = post_doc.to_dict()
+            comments = post_data.get('comments', [])
+            
+            # finding comment to delete
+            comment_to_delete = None
+            new_comments = []
+            
+            for comment in comments:
+                if comment.get('id') == comment_id:
+                    comment_to_delete = comment
+                else:
+                    new_comments.append(comment)
+            
+            if not comment_to_delete:
+                raise Exception('Comment not found')
+            
+            post_ref.update({
+                'comments': new_comments
+            })
+            
+            if admin_id:
+                self.log_admin_action(admin_id, 'COMMENT_DELETED', {
+                    'post_id': post_id,
+                    'comment_id': comment_id,
+                    'user_id': comment_to_delete.get('userId'),
+                    'content_preview': comment_to_delete.get('content', '')[:50] + '...' if len(comment_to_delete.get('content', '')) > 50 else comment_to_delete.get('content', '')
+                })
+            
+            return True
+        except Exception as e:
+            print(f'Error in delete_comment: {e}')
+            raise e
 
     # Analytics methods
 

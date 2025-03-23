@@ -519,7 +519,7 @@ class FirebaseService:
             admin_doc = admins[0]
             admin_data = admin_doc.to_dict()
             
-            if admin_data.get('password') != hashed_password:
+            if admin_data.get('password') != hashed_password: # check password
                 return None
             
             admin_return = admin_data.copy()
@@ -551,73 +551,73 @@ class FirebaseService:
             print(f'Error in get_admin: {e}')
             raise(e)
 
-    # Task management methods
+    # Task management methods, commented out as tasks are not implemented in db yet
     
-    def get_all_tasks(self):
-        '''get all task templates'''
-        try:
-            tasks = []
-            task_query = self.db.collection('tasks').stream()
+    # def get_all_tasks(self):
+    #     '''get all task templates'''
+    #     try:
+    #         tasks = []
+    #         task_query = self.db.collection('tasks').stream()
             
-            for doc in task_query:
-                task_data = doc.to_dict()
-                task_data['id'] = doc.id
-                tasks.append(task_data)
+    #         for doc in task_query:
+    #             task_data = doc.to_dict()
+    #             task_data['id'] = doc.id
+    #             tasks.append(task_data)
             
-            return tasks
-        except Exception as e:
-            print(f'Error in get_all_tasks: {e}')
-            raise e
+    #         return tasks
+    #     except Exception as e:
+    #         print(f'Error in get_all_tasks: {e}')
+    #         raise e
     
-    def create_task_template(self, title, reward, category='General', description=''): # ? Maybe not to use
-        '''Create new task template'''
-        try:
-            tasks_ref = self.db.collection('tasks').document()
+    # def create_task_template(self, title, reward, category='General', description=''): # ? Maybe not to use
+    #     '''Create new task template'''
+    #     try:
+    #         tasks_ref = self.db.collection('tasks').document()
             
-            task_data = {
-                'title': title,
-                'reward': reward,
-                'category': category,
-                'description': description,
-                'created_at': firestore.SERVER_TIMESTAMP
-            }
+    #         task_data = {
+    #             'title': title,
+    #             'reward': reward,
+    #             'category': category,
+    #             'description': description,
+    #             'created_at': firestore.SERVER_TIMESTAMP
+    #         }
             
-            tasks_ref.set(task_data)
-            return tasks_ref.id
-        except Exception as e:
-            print(f'Error in create_task_template: {e}')
-            raise e
+    #         tasks_ref.set(task_data)
+    #         return tasks_ref.id
+    #     except Exception as e:
+    #         print(f'Error in create_task_template: {e}')
+    #         raise e
     
-    def update_task(self, task_id, updates):
-        '''Update an existing task template'''
-        try:
-            task_ref = self.db.collection('tasks').document(task_id)
-            task_doc = task_ref.get()
+    # def update_task(self, task_id, updates):
+    #     '''Update an existing task template'''
+    #     try:
+    #         task_ref = self.db.collection('tasks').document(task_id)
+    #         task_doc = task_ref.get()
             
-            if not task_doc.exists:
-                raise Exception('Task not found')
+    #         if not task_doc.exists:
+    #             raise Exception('Task not found')
             
-            updates['UpdatedAt'] = firestore.SERVER_TIMESTAMP
-            task_ref.update(updates)
-            return True
-        except Exception as e:
-            print(f'Error in update_task: {e}')
-            raise e
+    #         updates['UpdatedAt'] = firestore.SERVER_TIMESTAMP
+    #         task_ref.update(updates)
+    #         return True
+    #     except Exception as e:
+    #         print(f'Error in update_task: {e}')
+    #         raise e
     
-    def delete_task(self, task_id):
-        '''Delete a task template'''
-        try:
-            task_ref = self.db.collection('tasks').document(task_id)
-            task_doc = task_ref.get()
+    # def delete_task(self, task_id):
+    #     '''Delete a task template'''
+    #     try:
+    #         task_ref = self.db.collection('tasks').document(task_id)
+    #         task_doc = task_ref.get()
             
-            if not task_doc.exists:
-                raise Exception('Task not found')
+    #         if not task_doc.exists:
+    #             raise Exception('Task not found')
             
-            task_ref.delete()
-            return True
-        except Exception as e:
-            print(f'Error in delete_task: {e}')
-            raise e
+    #         task_ref.delete()
+    #         return True
+    #     except Exception as e:
+    #         print(f'Error in delete_task: {e}')
+    #         raise e
     
     # User management methods
     
@@ -704,31 +704,43 @@ class FirebaseService:
     
     # Post Management methods
     
-    def get_all_posts(self, limit=50):
+    def get_all_posts(self, limit=50, start_after=None):
         '''Get all posts with a specific limit'''
         try:
-            posts = []
-            posts_query = (
+            query = (
                 self.db.collection('posts')
                 .order_by('createdAt', direction=firestore.Query.DESCENDING)
                 .limit(limit)
-                .stream()
             )
             
-            for doc in posts_query:
+            if start_after: # if a post is provided to start after
+                last_doc = self.db.collection('posts').document(start_after).get()
+                if last_doc.exists:
+                    query = query.start_after(last_doc)
+            
+            posts = []
+            for doc in query.stream():
                 post_data = doc.to_dict()
                 post_data['id'] = doc.id
                 
+                # convert timestamp to str
                 if 'createdAt' in post_data and post_data['createdAt']:
-                    post_data['createdAt'] = post_data['createdAt'].isoformat() # converts timestamp to string
+                    post_data['createdAt'] = post_data['createdAt'].isoformat()
                 
+                # count comments and likes
+                post_data['commentData'] = len(post_data.get('comments', []))
+                post_data['likeCount'] = len(post_data.get('likes', []))
                 posts.append(post_data)
-            return posts
+            
+            return {
+                'posts': posts,
+                'last_post': posts[-1]['id'] if posts else None
+            }
         except Exception as e:
             print(f'Error in suspend_user: {e}')
             raise e
     
-    def delete_post(self, post_id):
+    def delete_post(self, post_id, admin_id=None):
         '''Delete a specified post'''
         try:
             post_ref = self.db.collection('posts').document(post_id)
@@ -737,12 +749,16 @@ class FirebaseService:
             if not post_doc.exists:
                 raise Exception('Post not found')
             
+            post_data = post_doc.to_dict()
+            
             post_ref.delete() # delete post
             
-            # ! Next logic will need to be changed depending on how the collections are stored (likes and comments), TBD
-            comments_query = self.db.collection('comments').where('post_id', '==', post_id).stream()
-            for comment_doc in comments_query:
-                comment_doc.reference.delete()  # Use reference to delete the comment
+            if admin_id:
+                self.log_admin_action(admin_id, 'POST_DELETED', {
+                    'post_id': post_id,
+                    'user_id': post_data.get('userId'),
+                    'content_preview': post_data.get('content', '')[:50] + '...' if len(post_data.get('content', '')) > 50 else post_data.get('content', '')
+                })
             
             return True
         except Exception as e:

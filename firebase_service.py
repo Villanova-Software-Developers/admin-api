@@ -630,7 +630,7 @@ class FirebaseService:
             ) # base query
             
             if start_after: # start after given user assuming it is given and exists
-                last_doc = self.db.collection('users').get(start_after)
+                last_doc = self.db.collection('users').document(start_after).get()
                 if last_doc.exists:
                     query = query.start_after(last_doc)
             
@@ -801,7 +801,7 @@ class FirebaseService:
                     post_data['createdAt'] = post_data['createdAt'].isoformat()
                 
                 # count comments and likes
-                post_data['commentData'] = len(post_data.get('comments', []))
+                post_data['commentCount'] = len(post_data.get('comments', []))
                 post_data['likeCount'] = len(post_data.get('likes', []))
                 posts.append(post_data)
             
@@ -861,7 +861,7 @@ class FirebaseService:
                 self.log_admin_action(admin_id, 'POST_EDITED', {
                     'post_id': post_id,
                     'old_content_preview': old_content[:50] + '...' if len(old_content) > 50 else old_content,
-                    'new_content_preview': new_content[:50] if len(new_content) > 50 else new_content
+                    'new_content_preview': new_content[:50] + '...' if len(new_content) > 50 else new_content
                 })
             
             return True

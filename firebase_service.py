@@ -2,7 +2,6 @@
 import firebase_admin
 from firebase_admin import credentials, firestore, auth, storage, db
 import hashlib
-from werkzeug.utils import secure_filename
 import uuid
 import datetime
 import tempfile
@@ -914,147 +913,175 @@ class FirebaseService:
 
     # Analytics methods
 
-    def get_analytics_summary(self): # Can be refactored
+    def get_analytics_summary(self, days=30): # Can be refactored
         '''Get summary analytics for the dashboard'''
         try:
+            end_date = datetime.datetime.now()
+            start_date = end_date - datetime.timedelta(days=days)
+            
             # count users
             users_query = self.db.collection('users').stream()
             users_count = len(list(users_query))
             
-            # count tasks
-            tasks_query = self.db.collection('tasks').stream()
-            tasks_count = len(list(tasks_query))
+            # count new users in period
+            new_users_query = (
+                self.db.collection('users')
+                .where('createdAt', '>=', start_date)
+                .stream()
+            )
+            new_users = len(list(new_users_query))
             
-            # count posts
+            # count total posts
             posts_query = self.db.collection('posts').stream()
             posts_count = len(list(posts_query))
             
-            # count active users (past 7 days)
-            seven_days_ago = datetime.datetime.now() - datetime.timedelta(days=7)
-            active_users_query = (
-                self.db.collection('users')
-                .where('lastLogin', '>=', seven_days_ago)
+            # count new posts in period
+            new_posts_query = (
+                self.db.collection('posts')
+                .where('createdAt', '>=', start_date)
                 .stream()
             )
-            active_users_count = len(list(active_users_query))
+            new_posts = len(list(new_posts_query))
             
-            # count completed tasks
-            completed_tasks_query = (
-                self.db.collection('tasks')
-                .where('completed', '==', True ) # ? Not sure logic here will work properly, again depends on how the db is structured. To be reviewed at next meeting
+            # count total comments
+            total_comments = 0
+            all_posts_query = self.db.collection('posts').stream()
+            for post in all_posts_query:
+                post_data = post.to_dict()
+                total_comments += len(post_data.get('comments', []))
+            
+            # count new comments in period
+            new_comments = 0
+            all_posts_query = (
+                self.db.collection('posts')
                 .stream()
             )
-            completed_tasks_count = len(list(completed_tasks_query))
+            
+            for post in all_posts_query:
+                post_data = post.to_dict()
+                for comment in post_data.get('comments', []):
+                    comment_date = comment.get('createdAt', None)
+                    if comment_date:
+                        try:
+                            comment_datetime = datetime.datetime.fromisoformat(comment_date.replace('Z', '+00:00'))
+                            if comment_datetime >= start_date:
+                                new_comments += 1
+                        except (ValueError, TypeError):
+                            pass # skip comments with invalid dates
+            
             
             return {
                 'total_users': users_count,
-                'active_users_7d': active_users_count,
-                'total_tasks': tasks_count,
-                'completed_tasks': completed_tasks_count,
-                'posts_count': posts_count
+                'new_users': new_users,
+                'total_posts': posts_count,
+                'new_posts': new_posts,
+                'total_comments': total_comments,
+                'new_comments': new_comments,
+                'period_days': days
             }
         except Exception as e:
             print(f'Error in get_analytics_summary: {e}')
             raise e
     
-    def get_task_analytics(self):
-        '''Get analytics about tasks usage'''
-        try:
-            tasks_query = self.db.collection('tasks').stream() # get all tasks and then analyse categories
+    # NOT USABLE
+    # def get_task_analytics(self):
+    #     '''Get analytics about tasks usage'''
+    #     try:
+    #         tasks_query = self.db.collection('tasks').stream() # get all tasks and then analyse categories
             
-            # count tasks by category
-            categories = dict()
-            for doc in tasks_query:
-                task = doc.to_dict()
-                category = task.get('category', 'General')
-                categories[category] = categories.get(category, 0) + 1
+    #         # count tasks by category
+    #         categories = dict()
+    #         for doc in tasks_query:
+    #             task = doc.to_dict()
+    #             category = task.get('category', 'General')
+    #             categories[category] = categories.get(category, 0) + 1
             
-            # Get completion rate
-            total_user_tasks_query = self.db.collection('user_tasks').stream()
-            total_user_tasks_count = len(list(total_user_tasks_query))
+    #         # Get completion rate
+    #         total_user_tasks_query = self.db.collection('user_tasks').stream()
+    #         total_user_tasks_count = len(list(total_user_tasks_query))
             
-            completed_user_tasks_query = (
-                self.db.collection('user_tasks')
-                .where('completed', '==', True)
-                .stream()
-            )
-            completed_user_tasks_count = len(list(completed_user_tasks_query))
+    #         completed_user_tasks_query = (
+    #             self.db.collection('user_tasks')
+    #             .where('completed', '==', True)
+    #             .stream()
+    #         )
+    #         completed_user_tasks_count = len(list(completed_user_tasks_query))
             
-            completion_rate = 0
-            if total_user_tasks_count > 0:
-                completion_rate = (completed_user_tasks_count / total_user_tasks_count) * 100
+    #         completion_rate = 0
+    #         if total_user_tasks_count > 0:
+    #             completion_rate = (completed_user_tasks_count / total_user_tasks_count) * 100
             
-            return {
-                'categories': [{'name': k, 'count': v} for k, v in categories.items()],
-                'completion_rate': completion_rate,
-                'total_tasks_assigned': total_user_tasks_count,
-                'tasks_completed': completed_user_tasks_count
-            }
-        except Exception as e:
-            print(f'Error in get_task_analytics: {e}')
-            raise e
+    #         return {
+    #             'categories': [{'name': k, 'count': v} for k, v in categories.items()],
+    #             'completion_rate': completion_rate,
+    #             'total_tasks_assigned': total_user_tasks_count,
+    #             'tasks_completed': completed_user_tasks_count
+    #         }
+    #     except Exception as e:
+    #         print(f'Error in get_task_analytics: {e}')
+    #         raise e
     
-    def get_screentime_analytics(self): # ! This method uses a lot of db logic which might not follow the db structure, TO CHANGE to match associated structure
-        '''Get analytics about screentime usage'''
-        try:
-            # get all screentime records
-            screentime_query = self.db.collection('screentime').stream()
-            screentime_records = [doc.to_dict() for doc in screentime_query]
+    # def get_screentime_analytics(self): # ! This method uses a lot of db logic which might not follow the db structure, TO CHANGE to match associated structure
+    #     '''Get analytics about screentime usage'''
+    #     try:
+    #         # get all screentime records
+    #         screentime_query = self.db.collection('screentime').stream()
+    #         screentime_records = [doc.to_dict() for doc in screentime_query]
             
-            # calculate average daily screentime
-            total_time = 0
-            record_count = 0
+    #         # calculate average daily screentime
+    #         total_time = 0
+    #         record_count = 0
             
-            for record in screentime_records:
-                total_time += record.get('duration', 0)
-                record_count += 1
+    #         for record in screentime_records:
+    #             total_time += record.get('duration', 0)
+    #             record_count += 1
             
-            avg_screentime = 0
-            if record_count > 0:
-                avg_screentime = total_time / record_count
+    #         avg_screentime = 0
+    #         if record_count > 0:
+    #             avg_screentime = total_time / record_count
             
-            # calculate screentime by day of the week # ! Start of an intended feature of seeing screentime by day, unlikely to work with current structure
-            days_of_week = {
-            0: 'Monday',
-            1: 'Tuesday',
-            2: 'Wednesday',
-            3: 'Thursday',
-            4: 'Friday',
-            5: 'Saturday',
-            6: 'Sunday'
-            }
+    #         # calculate screentime by day of the week # ! Start of an intended feature of seeing screentime by day, unlikely to work with current structure
+    #         days_of_week = {
+    #         0: 'Monday',
+    #         1: 'Tuesday',
+    #         2: 'Wednesday',
+    #         3: 'Thursday',
+    #         4: 'Friday',
+    #         5: 'Saturday',
+    #         6: 'Sunday'
+    #         }
             
-            screentime_by_day = {day: 0 for day in days_of_week.values()}
-            counts_by_day = {day: 0 for day in days_of_week.values()}
+    #         screentime_by_day = {day: 0 for day in days_of_week.values()}
+    #         counts_by_day = {day: 0 for day in days_of_week.values()}
             
-            for record in screentime_records:
-                if 'timestamp' in record and record['timestamp']:
-                    timestamp = record['timestamp']
-                    if isinstance(timestamp, str):
-                        timestamp = datetime.datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-                    day_name = days_of_week[timestamp.weekday()]
-                    screentime_by_day[day_name] += record.get('duration', 0)
-                    counts_by_day[day_name] += 1
+    #         for record in screentime_records:
+    #             if 'timestamp' in record and record['timestamp']:
+    #                 timestamp = record['timestamp']
+    #                 if isinstance(timestamp, str):
+    #                     timestamp = datetime.datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+    #                 day_name = days_of_week[timestamp.weekday()]
+    #                 screentime_by_day[day_name] += record.get('duration', 0)
+    #                 counts_by_day[day_name] += 1
             
-            # calculate average by day
-            avg_by_day = dict()
-            for day in days_of_week.values():
-                if counts_by_day[day] > 0:
-                    avg_by_day[day] = screentime_by_day[day] / counts_by_day[day]
-                else:
-                    avg_by_day[day] = 0
+    #         # calculate average by day
+    #         avg_by_day = dict()
+    #         for day in days_of_week.values():
+    #             if counts_by_day[day] > 0:
+    #                 avg_by_day[day] = screentime_by_day[day] / counts_by_day[day]
+    #             else:
+    #                 avg_by_day[day] = 0
             
-            return {
-                'average_daily_screentime': avg_screentime,
-                'screentime_by_day': [{'day': day, 'average': average} for day, average in avg_by_day.items()]
-            }
-        except Exception as e:
-            print(f'Error in get_screentime_analytics: {e}')
-            raise e
+    #         return {
+    #             'average_daily_screentime': avg_screentime,
+    #             'screentime_by_day': [{'day': day, 'average': average} for day, average in avg_by_day.items()]
+    #         }
+    #     except Exception as e:
+    #         print(f'Error in get_screentime_analytics: {e}')
+    #         raise e
     
     # Admin logs methods
     
-    def log_admin_action(self, admin_id, action_type, details=None, ip_address=None):
+    def log_admin_action(self, admin_id, action_type, details=None):
         '''Log an action taken/performed by an admin'''
         try:
             log_ref = self.db.collection('admin_logs').document()
@@ -1064,7 +1091,7 @@ class FirebaseService:
                 'action_type': action_type,
                 'details': details or dict(),
                 'timestamp': firestore.SERVER_TIMESTAMP,
-                'ip_address': ip_address # to get from the request in the actual route handler
+                'ip_address': None # to get from the request in the actual route handler
             }
             
             log_ref.set(log_data)
@@ -1081,11 +1108,13 @@ class FirebaseService:
                 self.db.collection('admin_logs')
                 .order_by('timestamp', direction=firestore.Query.DESCENDING)
                 .limit(limit)
-                .stream())
+                .stream()
+            )
             
             for doc in logs_query:
                 log_data = doc.to_dict()
                 log_data['id'] = doc.id
+                
                 if 'timestamp' in log_data and log_data['timestamp']: # convert time stamp to string if it exists
                     log_data['timestamp'] = log_data['timestamp'].isoformat()
                 logs.append(log_data)

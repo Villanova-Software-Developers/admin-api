@@ -621,82 +621,156 @@ class FirebaseService:
     
     # User management methods
     
-    def get_all_users(self):
+    def get_all_users(self, limit=50, start_after=None):
         '''Get all users with basic info'''
         try:
-            users = []
-            users_query = self.db.collection('users').stream()
+            query = (
+                self.db.collection('users')
+                .order_by('createdAt', direction=firestore.Query.DESCENDING)
+                .limit(limit)
+            ) # base query
             
-            for doc in users_query:
+            if start_after: # start after given user assuming it is given and exists
+                last_doc = self.db.collection('users').get(start_after)
+                if last_doc.exists:
+                    query = query.start_after(last_doc)
+            
+            users = []
+            for doc in query.stream():
                 user_data = doc.to_dict()
+                
+                # filtered user object wo we don't see password and other details
                 filtered_user = {
                     'id': doc.id,
                     'username': user_data.get('username', ''),
                     'email': user_data.get('email', ''),
-                    'createdAt': user_data.get('createdAt', ''),
-                    'lastLogin': user_data.get('lastLogin', ''),
+                    'friends': len(user_data.get('friends', [])),
                     'suspended': user_data.get('suspended', False)
                 }
+                
+                if 'createdAt' in user_data and user_data['createdAt']:
+                    filtered_user['createdAt'] = user_data['createdAt'].isoformat()
+                
                 users.append(filtered_user)
-            return users
+            
+            return {
+                'users': users,
+                'last_user': users[-1]['id'] if users else None
+            }
         except Exception as e:
             print(f'Error in get_all_users: {e}')
             raise(e)
     
-    def get_user_tasks(self, user_id):
-        '''Get tasks associated with specific user'''
-        try:
-            tasks = []
-            tasks_query = self.db.collection('user_tasks').where('userId', '==', user_id).stream()
+    ## NOT USABLE
+    # def get_user_tasks(self, user_id):
+    #     '''Get tasks associated with specific user'''
+    #     try:
+    #         tasks = []
+    #         tasks_query = self.db.collection('user_tasks').where('userId', '==', user_id).stream()
             
-            for doc in tasks_query:
-                task_data = doc.to_dict()
-                task_data['id'] = doc.id
-                tasks.append(task_data)
+    #         for doc in tasks_query:
+    #             task_data = doc.to_dict()
+    #             task_data['id'] = doc.id
+    #             tasks.append(task_data)
             
-            return tasks
-        except Exception as e:
-            print(F'Error in get_user_tasks: {e}')
-            raise e
+    #         return tasks
+    #     except Exception as e:
+    #         print(F'Error in get_user_tasks: {e}')
+    #         raise e
     
-    def get_user_screentime(self, user_id):
-        '''Get screentime data for a user'''
-        try:
-            screentime_query = self.db.collection('screentime').where('userId', '==', user_id).stream()
-            screentime_data = [doc.to_dict() for doc in screentime_query]
+    # def get_user_screentime(self, user_id):
+    #     '''Get screentime data for a user'''
+    #     try:
+    #         screentime_query = self.db.collection('screentime').where('userId', '==', user_id).stream()
+    #         screentime_data = [doc.to_dict() for doc in screentime_query]
             
-            return screentime_data
-        except Exception as e:
-            print(f'Error in get_user_screentime: {e}')
-            raise(e)
+    #         return screentime_data
+    #     except Exception as e:
+    #         print(f'Error in get_user_screentime: {e}')
+    #         raise(e)
 
-    def reset_user_password(self, user_id, new_password):
-        '''Reset a user's password'''
-        try:
-            user_ref = self.db.collection('users').document(user_id) # TODO: in production environment, it would be best to use firebase auth to reset password
+    # PIVOT, decide whether to allow admin password resets
+    # def reset_user_password(self, user_id, new_password):
+    #     '''Reset a user's password'''
+    #     try:
+    #         user_ref = self.db.collection('users').document(user_id) # TODO: in production environment, it would be best to use firebase auth to reset password
             
+    #         user_doc = user_ref.get()
+    #         if not user_doc.exists:
+    #             raise Exception('User not found')
+            
+    #         hashed_password = hashlib.sha256(new_password.encode()).hexdigest() # check back on hashing password functionality
+            
+    #         user_ref.update({'password': hashed_password})
+    #         return True
+    #     except Exception as e:
+    #         print(f'Error in reset_user_password: {e}')
+    #         raise(e)
+    
+    def delete_user(self, user_id, admin_id=None):
+        '''Delete a user and their posts'''
+        try:
+            user_ref = self.db.collection('users').document(user_id)
             user_doc = user_ref.get()
+            
             if not user_doc.exists:
                 raise Exception('User not found')
             
-            hashed_password = hashlib.sha256(new_password.encode()).hexdigest() # check back on hashing password functionality
+            user_data = user_doc.to_dict()
             
-            user_ref.update({'password': hashed_password})
-            return True
+            # get user's posts
+            posts_query = self.db.collection('posts').where('userId', '==', user_id).stream()
+            post_ids = [doc.id for doc in posts_query]
+            
+            batch = self.db.batch() # use batch to delete user and posts all at once
+            
+            # delete user and associated posts
+            batch.delete(user_ref)
+            for post_id in post_ids:
+                post_ref = self.db.collection('posts').document(post_id)
+                batch.delete(post_ref)
+            
+            batch.commit() # commit batch
+            
+            # log action
+            if admin_id:
+                self.log_admin_action(admin_id, 'USER_DELETED', {
+                    'user_id': user_id,
+                    'username': user_data.get('username', ''),
+                    'email': user_data.get('email', ''),
+                    'posts_deleted': len(post_ids)
+                })
+            
+            return {
+                'success': True,
+                'posts_deleted': len(post_ids)
+            }
         except Exception as e:
-            print(f'Error in reset_user_password: {e}')
-            raise(e)
+            print(f'Error in delete_user: {e}')
+            raise e
     
-    def suspend_user(self, user_id, suspend=True):
+    def suspend_user(self, user_id, suspended=True, admin_id=None):
         '''Suspend or unsuspend a user account'''
         try:
             user_ref = self.db.collection('users').document(user_id)
-            
             user_doc = user_ref.get()
+            
             if not user_doc.exists:
                 raise Exception('User not found')
             
-            user_ref.update({'suspended': suspend})
+            user_data = user_doc.to_dict()
+            user_ref.update({
+                'suspended': suspended
+            })
+            
+            if admin_id:
+                action_type = 'USER_SUSPENDED' if suspended else 'USER_UNSUSPENDED'
+                self.log_admin_action(admin_id, action_type, {
+                    'user_id': user_id,
+                    'username': user_data.get('username', ''),
+                    'email': user_data.get('email', '')
+                })
+            
             return True
         except Exception as e:
             print(f'Error in suspend_user: {e}')

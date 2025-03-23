@@ -106,7 +106,7 @@ class FirebaseService:
             print(f"Error in get_user_profile: {e}")
             raise e
     
-    def get_user_posts(self, user_id):
+    def get_user_posts(self, user_id): # ! Added for admin-api
         '''Get all posts created by a specific user'''
         try:
             # query posts by the user
@@ -493,6 +493,8 @@ class FirebaseService:
         except Exception as e:
             print(f"Error in upload_profile_picture: {e}")
             raise e
+    
+    # ! everything below this point has been added to support admin-api
     
     # Admin auth methods
     

@@ -523,9 +523,12 @@ class FirebaseService:
             self.log_admin_action(admin_id, 'ADMIN_CREATED', {
                 'admin_email': email
             })
-            admin_return = admin_data.copy()
-            admin_return.pop('password')
-            return admin_return
+            
+            return {
+            'id': admin_id,
+            'email': email,
+            'name': name
+            }
         except Exception as e:
             print(f'Error in register_admin: {e}')
             raise(e)

@@ -383,6 +383,59 @@ def get_admin_logs(current_admin):
             'error': str(e)
         }), 400
 
+# Community
+
+@app.route('/api/admin/community/tasks', methods=['POST'])
+@token_required
+def create_community_task(current_admin):
+    try:
+        data = request.json
+        title = data.get('title')
+        category = data.get('category')
+        reward_minutes = data.get('reward_minutes')
+        deadline = data.get('deadline')
+        
+        if not all([title, category, reward_minutes, deadline]):
+            return jsonify({
+                'success': False,
+                'error': 'All fields are required. Fields are: title, category, reward_minutes, deadline'
+            }), 400
+        
+        try: 
+            reward_minutes = int(reward_minutes)
+            if reward_minutes <= 0:
+                raise ValueError('Reward minutes must be positive')
+        except (TypeError, ValueError):
+            return jsonify({
+                'success': False,
+                'error': 'Reward minutes must be a positive number'
+            }), 400
+        
+        try:
+            deadline_dt = datetime.datetime.strptime(deadline, '%d/%m/%Y %H:%M')
+            if deadline_dt <= datetime.datetime.now():
+                return jsonify({
+                    'success': False,
+                    'error': 'Deadline must be a future date'
+                }), 400
+        except ValueError:
+            return jsonify({
+                'success': False,
+                'error': 'Invalid deadline format. Use format DD/MM/YYYY HH:MM'
+            }), 400
+        
+        task = firebase_service.create_community_task(title=title, category=category, reward_time=reward_minutes, deadline=deadline_dt, admin_id=current_admin['id'])
+        
+        return jsonify({
+            'success': True,
+            'community_task': task
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 400
+
 # Start server
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001)) # we use 5001 for now to use a different port than the main API

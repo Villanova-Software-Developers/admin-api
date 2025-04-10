@@ -1152,3 +1152,54 @@ class FirebaseService:
         except Exception as e:
             print(f'Error in get_admins_logs: {e}')
             raise e
+    
+    # Community features
+    
+    def create_community_task(self, title, category, reward_minutes, deadline, admin_id=None):
+        '''
+        Create a new community task.
+        Args: 
+            title (str): Task title
+            category (str): Task category
+            reward_minutes (int): Reward_time in minutes
+            deadline (datetime): Task deadline as Python datetime object
+        Returns:
+            dict: Created task data
+        '''
+        try: 
+            
+            task_ref = self.db.collection('community_tasks').document()
+            task_id = task_ref.id
+            
+            task_data = {
+                'id': task_id,
+                'title': title,
+                'category': category,
+                'reward_minutes': reward_minutes,
+                'deadline': deadline,
+                'created_at': firestore.SERVER_TIMESTAMP,
+                'participants': [],
+                'completed_by': [],
+                'created_by': admin_id
+            }
+            
+            task_ref.set(task_data)
+
+            if admin_id:
+                self.log_admin_action(admin_id, 'COMMUNITY_TASK_CREATED', {
+                    'task_id': task_data['id'],
+                    'title': task_data['title'],
+                    'category': task_data['category'],
+                    'reward_minutes': task_data['reward_minutes'],
+                    'deadline': task_data['deadline'].isoformat()
+                })
+            
+            response_data = task_data.copy()
+            response_data.pop('created_at')
+            if isinstance(response_data['deadline'], datetime.datetime):
+                response_data['deadline'] = response_data['deadline'].isoformat()
+            
+            return response_data
+        except Exception as e:
+            print(f'Error in create_community_task: {e}')
+            raise e

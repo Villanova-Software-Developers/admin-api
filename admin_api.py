@@ -512,7 +512,7 @@ def update_community_task(current_admin, task_id):
             'error': str(e)
         }), 400
 
-@app.route('/api/admin/community-tasks/<task_id>', methods=['PUT'])
+@app.route('/api/admin/community-tasks/<task_id>', methods=['DELETE'])
 @token_required
 def delete_community_task_route(current_admin, task_id):
     try:
@@ -583,7 +583,7 @@ def get_task_category(current_admin, category_id):
             'error': str(e)
         }), 400
 
-@app.route('api/admin/community-tasks/categories', methods=['POST'])
+@app.route('/api/admin/community-tasks/categories', methods=['POST'])
 @token_required
 def create_task_category(current_admin):
     try:
@@ -614,7 +614,7 @@ def create_task_category(current_admin):
             'error': str(e)
         }), 400
 
-@app.route('/api/admin/community_task/categories/<category_id>', methods=['PUT'])
+@app.route('/api/admin/community-tasks/categories/<category_id>', methods=['PUT'])
 @token_required
 def update_task_category(current_admin, category_id):
     try:
@@ -636,7 +636,7 @@ def update_task_category(current_admin, category_id):
             'error': str(e)
         }), 400
 
-@app.route('/api/admin/community_task/categories/<category_id>', methods=['DELETE'])
+@app.route('/api/admin/community-tasks/categories/<category_id>', methods=['DELETE'])
 @token_required
 def delete_task_category(current_admin, category_id):
     try:

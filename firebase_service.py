@@ -1012,6 +1012,56 @@ class FirebaseService:
             print(f'Error in get_analytics_summary: {e}')
             raise e
     
+    def get_community_task_stats(self):
+        '''Get stats about community tasks'''
+        try:
+            tasks_query = self.db.collection('community_tasks').stream()
+            tasks = [doc.to_dict() for doc in tasks_query]
+            
+            now = datetime.datetime.now()
+            
+            total_tasks = len(tasks)
+            active_tasks = 0
+            expired_tasks = 0
+            total_participants = 0
+            total_completions = 0
+            tasks_by_category = {}
+            
+            for task in tasks:
+                deadline = task.get('deadline')
+                if isinstance(deadline, str):
+                    deadline = datetime.datetime.fromisoformat(deadline.replace('Z', '+00:00'))
+                
+                if deadline and deadline > now:
+                    active_tasks += 1
+                else:
+                    expired_tasks += 1
+                
+                participants = task.get('participants', [])
+                completed_by = task.get('completed_by', [])
+                total_participants += len(participants)
+                total_completions += len(completed_by)
+                
+                category = task.get('category', 'Uncategorized')
+                if category not in tasks_by_category:
+                    tasks_by_category[category] = 0
+                tasks_by_category[category] += 1
+                
+            category_stats = [{'name': category, 'count': count} for category, count in tasks_by_category.items()]
+            
+            return {
+                'total_tasks': total_tasks,
+                'active_tasks': active_tasks,
+                'expired_tasks': expired_tasks,
+                'total_participants': total_participants,
+                'total_completions': total_completions,
+                'completion_rate': (total_completions / total_participants * 100) if total_participants > 0 else 0,
+                'tasks_by_category': category_stats
+            }
+        except Exception as e:
+            print(f'Error in get_community_tasks: {e}')
+            raise e
+
     # NOT USABLE
     # def get_task_analytics(self):
     #     '''Get analytics about tasks usage'''
@@ -1433,7 +1483,7 @@ class FirebaseService:
             if admin_id:
                 self.log_admin_action(admin_id, 'COMMUNITY_TASK_CATEGORY_UPDATED', {
                     'category_id': category_id,
-                    'category_name': updates.get('category_name', original_category.get('category_name', ''))
+                    'category_name': updates.get('category_name', original_category.get('category_name', '')),
                     'changes': list(updates.keys())
                 })
             

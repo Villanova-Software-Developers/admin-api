@@ -385,7 +385,44 @@ def get_admin_logs(current_admin):
 
 # Community
 
-@app.route('/api/admin/community/tasks', methods=['POST'])
+@app.route('/api/admin/community-tasks', methods=['GET'])
+@token_required
+def get_community_tasks(current_admin):
+    try:
+        limit = request.args.get('limit', 50, type=int)
+        start_after = request.args.get('startAfter')
+        
+        tasks_data = firebase_service.get_community_tasks(limit=limit, start_after=start_after)
+        
+        return jsonify({
+            'success': True,
+            'tasks': tasks_data['tasks'],
+            'last_task': tasks_data['last_task']
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 400
+
+@app.route('/api/admin/community-tasks/<task_id>', methods=['GET'])
+@token_required
+def get_community_task(current_admin, task_id):
+    try:
+        
+        task = firebase_service.get_community_task(task_id=task_id)
+        
+        return jsonify({
+            'success': True,
+            'task': task
+        })
+    except Exception as e:
+        return jsonify({
+            'sucess': False,
+            'error': str(e)
+        }), 400
+
+@app.route('/api/admin/community-tasks', methods=['POST'])
 @token_required
 def create_community_task(current_admin):
     try:
@@ -437,21 +474,183 @@ def create_community_task(current_admin):
             'error': str(e)
         }), 400
 
-# @app.route('/api/admin/community/tasks/category', methods=['POST'])
-# @token_required
-# def create_new_community_category(current_admin):
-#     try:
-#         data = request.json
-#         category_name = data.get('category_name')
-#         category_type = data.get('category_type')
+@app.route('/api/admin/community-tasks/<task_id>', methods=['PUT'])
+@token_required
+def update_community_task(current_admin, task_id):
+    try:
+        data = request.json
+        deadline = data.get('deadline')
         
-#         if not category_type:
-#             return jsonify({
-#                 'success': False,
-#                 'error': 'Invalid input. Fields are: category_name, category_type'
-#             })
+        if deadline:
+            try:
+                deadline_dt = datetime.datetime.strptime(deadline, '%d/%m/%Y %H:%M')
+                if deadline_dt <= datetime.datetime.now():
+                    return jsonify({
+                        'success': False,
+                        'error': 'Deadline must be a future date'
+                    }), 400
+                data['deadline'] = deadline_dt
+            except ValueError:
+                return jsonify({
+                    'success': False,
+                    'error': 'Invalid deadline format. Use format DD/MM/YYYY HH:MM'
+                }), 400
         
-#         category = firebase_service.
+        updated_task = firebase_service.update_community_task(
+            task_id=task_id,
+            updates=data,
+            admin_id=current_admin['id']
+        )
+        
+        return jsonify({
+            'success': True,
+            'task': updated_task
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 400
+
+@app.route('/api/admin/community-tasks/<task_id>', methods=['PUT'])
+@token_required
+def delete_community_task_route(current_admin, task_id):
+    try:
+        
+        firebase_service.delete_community_task(
+            task_id=task_id,
+            admin_id=current_admin['id']
+        )
+        
+        return jsonify({
+            'success': True,
+            'message': f'Community task {task_id} has been deleted'
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 400
+
+@app.route('/api/admin/community-tasks/stats', methods=['GET'])
+@token_required
+def get_community_task_stats(current_admin):
+    try:
+        stats = firebase_service.get_community_task_stats()
+        
+        return jsonify({
+            'success': True,
+            'stats': stats
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 400
+
+@app.route('/api/admin/community-tasks/categories', methods=['GET'])
+@token_required
+def get_community_task_categories(current_admin):
+    try:
+        limit = request.args.get('limit', 50, type=int)
+        start_after = request.args.get('startAfter')
+        
+        categories = firebase_service.get_task_categories()
+        
+        return jsonify({
+            'success': True,
+            'categories': categories
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 400
+
+@app.route('/api/admin/community-tasks/categories/<category_id>', methods=['GET'])
+@token_required
+def get_task_category(current_admin, category_id):
+    try:
+        category = firebase_service.get_task_category(category_id=category_id)
+        
+        return jsonify({
+            'success': True,
+            'category': category 
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 400
+
+@app.route('api/admin/community-tasks/categories', methods=['POST'])
+@token_required
+def create_task_category(current_admin):
+    try:
+        data = request.json
+        
+        required_fields = ['category_name', 'category_type', 'description']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({
+                    'success': False,
+                    'error': f'Field {field} is required'
+                }), 400
+
+        category = firebase_service.create_community_task_category(
+            category_name=data['category_name'],
+            category_type=data['category_type'],
+            description=data['description'],
+            admin_id=current_admin['id']
+        )
+        
+        return jsonify({
+            'success': True,
+            'category': category
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 400
+
+@app.route('/api/admin/community_task/categories/<category_id>', methods=['PUT'])
+@token_required
+def update_task_category(current_admin, category_id):
+    try:
+        data = request.json
+        
+        updated_category = firebase_service.update_task_category(
+            category_id=category_id,
+            updates=data,
+            admin_id=current_admin['id']
+        )
+        
+        return jsonify({
+            'success': True,
+            'category': updated_category
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 400
+
+@app.route('/api/admin/community_task/categories/<category_id>', methods=['DELETE'])
+@token_required
+def delete_task_category(current_admin, category_id):
+    try:
+        firebase_service.delete_community_task_category(category_id=category_id, admin_id=current_admin['id'])
+        
+        return jsonify({
+            'success': True,
+            'message': f'Category {category_id} has been deleted'
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 400
 
 # Start server
 if __name__ == '__main__':

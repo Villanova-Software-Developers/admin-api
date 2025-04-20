@@ -1018,7 +1018,7 @@ class FirebaseService:
             tasks_query = self.db.collection('community_tasks').stream()
             tasks = [doc.to_dict() for doc in tasks_query]
             
-            now = datetime.datetime.now()
+            now = datetime.datetime.now(datetime.timezone.utc)
             
             total_tasks = len(tasks)
             active_tasks = 0
@@ -1029,8 +1029,34 @@ class FirebaseService:
             
             for task in tasks:
                 deadline = task.get('deadline')
+                
                 if isinstance(deadline, str):
-                    deadline = datetime.datetime.fromisoformat(deadline.replace('Z', '+00:00'))
+                    try:
+                        # Handle different string formats
+                        if 'Z' in deadline:
+                            deadline = datetime.datetime.fromisoformat(deadline.replace('Z', '+00:00'))
+                        else:
+                            # Try to parse with timezone info
+                            deadline = datetime.datetime.fromisoformat(deadline)
+                            # If no timezone, make it UTC
+                            if deadline.tzinfo is None:
+                                deadline = deadline.replace(tzinfo=datetime.timezone.utc)
+                    except ValueError:
+                        # If parsing fails, try a different approach
+                        try:
+                            # Try parse DD/MM/YYYY HH:MM format
+                            day, rest = deadline.split('/', 1)
+                            month, rest = rest.split('/', 1)
+                            year, time = rest.split(' ', 1)
+                            hour, minute = time.split(':')
+                            deadline = datetime.datetime(
+                                int(year), int(month), int(day), 
+                                int(hour), int(minute), 
+                                tzinfo=datetime.timezone.utc
+                            )
+                        except:
+                            # If all else fails, make it a past date
+                            deadline = now - datetime.timedelta(days=1)
                 
                 if deadline and deadline > now:
                     active_tasks += 1

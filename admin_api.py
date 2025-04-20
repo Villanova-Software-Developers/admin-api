@@ -507,6 +507,7 @@ def update_community_task(current_admin, task_id):
             'task': updated_task
         })
     except Exception as e:
+        print(f'Error: {e}')
         return jsonify({
             'success': False,
             'error': str(e)

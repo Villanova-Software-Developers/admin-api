@@ -424,17 +424,34 @@ def create_community_task(current_admin):
                 'error': 'Invalid deadline format. Use format DD/MM/YYYY HH:MM'
             }), 400
         
-        task = firebase_service.create_community_task(title=title, category=category, reward_time=reward_minutes, deadline=deadline_dt, admin_id=current_admin['id'])
+        task = firebase_service.create_community_task(title=title, category=category, reward_minutes=reward_minutes, deadline=deadline_dt, admin_id=current_admin['id'])
         
         return jsonify({
             'success': True,
             'community_task': task
         })
     except Exception as e:
+        print(f'Error: {e}')
         return jsonify({
             'success': False,
             'error': str(e)
         }), 400
+
+# @app.route('/api/admin/community/tasks/category', methods=['POST'])
+# @token_required
+# def create_new_community_category(current_admin):
+#     try:
+#         data = request.json
+#         category_name = data.get('category_name')
+#         category_type = data.get('category_type')
+        
+#         if not category_type:
+#             return jsonify({
+#                 'success': False,
+#                 'error': 'Invalid input. Fields are: category_name, category_type'
+#             })
+        
+#         category = firebase_service.
 
 # Start server
 if __name__ == '__main__':

@@ -531,7 +531,7 @@ class FirebaseService:
             }
         except Exception as e:
             print(f'Error in register_admin: {e}')
-            raise(e)
+            raise e
     
     def login_admin(self, email, password):
         '''Authenticate an admin user'''
@@ -557,7 +557,7 @@ class FirebaseService:
             return admin_return
         except Exception as e:
             print(f'Error in login_admin: {e}')
-            raise(e)
+            raise e
 
     def get_admin(self, admin_id):
         '''Get admin by id'''
@@ -577,7 +577,7 @@ class FirebaseService:
             return admin_return
         except Exception as e:
             print(f'Error in get_admin: {e}')
-            raise(e)
+            raise e
 
     # Task management methods, commented out as tasks are not implemented in db yet
     
@@ -687,7 +687,7 @@ class FirebaseService:
             }
         except Exception as e:
             print(f'Error in get_all_users: {e}')
-            raise(e)
+            raise e
     
     ## NOT USABLE
     # def get_user_tasks(self, user_id):
@@ -715,7 +715,7 @@ class FirebaseService:
     #         return screentime_data
     #     except Exception as e:
     #         print(f'Error in get_user_screentime: {e}')
-    #         raise(e)
+    #         raise e
 
     # PIVOT, decide whether to allow admin password resets
     # def reset_user_password(self, user_id, new_password):
@@ -733,7 +733,7 @@ class FirebaseService:
     #         return True
     #     except Exception as e:
     #         print(f'Error in reset_user_password: {e}')
-    #         raise(e)
+    #         raise e
     
     def delete_user(self, user_id, admin_id=None):
         '''Delete a user and their posts'''
@@ -1168,6 +1168,10 @@ class FirebaseService:
         '''
         try: 
             
+            community_task_query = self.db.collection('community_tasks').where('title', '==', title).limit(1).stream()
+            if list(community_task_query):
+                raise Exception('Community task with this title already exists')
+            
             task_ref = self.db.collection('community_tasks').document()
             task_id = task_ref.id
             
@@ -1202,4 +1206,201 @@ class FirebaseService:
             return response_data
         except Exception as e:
             print(f'Error in create_community_task: {e}')
+            raise e
+    
+    def delete_community_task(self, task_id, admin_id=None):
+        '''
+        Delete a community task.
+        Args:
+            task_id (str): The id of the task to be deleted
+        Returns:
+            True: The task was successfully deleted
+        '''
+        try:
+            community_task_ref = self.db.collection('community_tasks').document(task_id)
+            community_task_doc = community_task_ref.get()
+            
+            if not community_task_doc.exists:
+                raise Exception('Community task not found')
+            
+            community_task_data = community_task_doc.to_dict()
+            
+            # get metadata on the task deleted
+            task_title = community_task_data.get('title', '')
+            num_participants = len(community_task_data.get('participants', []))
+            num_completed = len(community_task_data.get('completed_by', []))
+            created_by = community_task_data.get('created_by', '')
+            
+            community_task_ref.delete()
+            
+            if admin_id:
+                self.log_admin_action(admin_id, 'COMMUNITY_TASK_DELETED', {
+                    'task_id': task_id,
+                    'title': task_title,
+                    'participants_count': num_participants,
+                    'completed_count': num_completed,
+                    'created_by': created_by
+                })
+            
+            return True
+        except Exception as e:
+            print(f'Error in delete_community_task: {e}')
+            raise e
+    
+    def get_community_tasks(self, limit=50, start_after=None):
+        '''Get all community tasks with basic info'''
+        try:
+            query = (
+                self.db.collection('community_tasks')
+                .order_by('created_at', direction=firestore.Query.DESCENDING)
+                .limit(limit)
+            )
+            
+            if start_after:
+                last_doc = self.db.collection('community_tasks').document(start_after).get()
+                if last_doc.exists:
+                    query = query.start_after(last_doc)
+            
+            tasks = []
+            for doc in query.stream():
+                task_data = doc.to_dict()
+                task_data['id'] = doc.id
+                
+                if 'created_at' in task_data and task_data['created_at']:
+                    task_data['created_at'] = task_data['created_at'].isoformat()
+                if 'deadline' in task_data and task_data['deadline']:
+                    if isinstance(task_data['deadline'], datetime.datetime):
+                        task_data['deadline'] = task_data['deadline'].isoformat()
+                
+                task_data['participants_count'] = len(task_data.get('participants', []))
+                task_data['completed_count'] = len(task_data.get('completed_by', []))
+                
+                tasks.append(task_data)
+
+            return {
+                'tasks': tasks,
+                'last_task': tasks[-1]['id'] if tasks else None
+            }
+        except Exception as e:
+            print(f'Error in get_community_tasks: {e}')
+            raise e
+    
+    def get_community_task(self, task_id):
+        '''Get details of a specific community task'''
+        try:
+            task_doc = self.db.collection('community_tasks').document(task_id).get()
+            
+            if not task_doc.exists:
+                raise Exception('Community task not found')
+            
+            task_data = task_doc.to_dict()
+            task_data['id'] = task_doc.id
+            
+            if 'created_at' in task_data and task_data['created_at']:
+                    task_data['created_at'] = task_data['created_at'].isoformat()
+            if 'deadline' in task_data and task_data['deadline']:
+                if isinstance(task_data['deadline'], datetime.datetime):
+                    task_data['deadline'] = task_data['deadline'].isoformat()
+            
+            participants = []
+            if task_data.get('participants'):
+                for participant_id in task_data['participants']:
+                    user_doc = self.db.collection('users').document(participant_id).get()
+                    if user_doc.exists:
+                        user_data = user_doc.to_dict()
+                        participants.append({
+                            'id': participant_id,
+                            'username': user_data.get('username', ''),
+                            'email': user_data.get('email', '')
+                        })
+            
+            completed_by = []
+            if task_data.get('completed_by'):
+                for participant_id in task_data['completed_by']:
+                    user_doc = self.db.collection('users').document(participant_id).get()
+                    if user_doc.exists:
+                        user_data = user_doc.to_dict()
+                        completed_by.append({
+                            'id': participant_id,
+                            'username': user_data.get('username', ''),
+                            'email': user_data.get('email', '')
+                        })
+            
+            task_data['participants'] = participants
+            task_data['completed_by'] = completed_by
+            
+            return task_data
+        except Exception as e:
+            print(f'Error in get_community_task: {e}')
+            raise e
+    
+    
+    def create_community_task_category(self, category_name, category_type, description, admin_id=None):
+        '''
+        Create a new community task category.
+        Args:
+            category_name (str): The name of the category
+            category_type (str): The type of category (e.g. social, sports, academic, etc)
+            description (str): A brief description of the category.
+        Returns:
+            dict: Created category data
+        '''
+        try:
+            
+            category_query = self.db.collection('categories').where('category_name', '==', category_name).limit(1).stream()
+            if list(category_query):
+                raise Exception('Category with this name already exists')
+            
+            category_ref = self.db.collection('categories').document()
+            category_id = category_ref.id
+            
+            category_data = {
+                'id': category_id,
+                'category_name': category_name,
+                'category_type': category_type,
+                'description': description,
+                'created_at': firestore.SERVER_TIMESTAMP
+            }
+            category_ref.set(category_data)
+            self.log_admin_action(admin_id, 'COMMUNITY_TASK_CATEGORY_CREATED', {
+                'category': category_name
+            })
+            
+            return {
+                'category_name': category_name,
+                'category_type' : category_type,
+                'description': description
+            }
+        except Exception as e:
+            print(f'Error in create_community_task_category: {e}')
+            raise e
+    
+    def delete_community_task_category(self, category_id, admin_id=None):
+        '''
+        Delete a community task category
+        Args:
+            category_id (str): The id of the category to be deleted
+        Returns:
+            True: The task was successfully deleted
+        '''
+        try:
+            community_task_category_ref = self.db.collection('categories').document(category_id)
+            community_task_category_doc = community_task_category_ref.get()
+            
+            if not community_task_category_doc.exists:
+                raise Exception('Community task category not found')
+            
+            community_task_category_data = community_task_category_doc.to_dict()
+            
+            community_task_category_ref.delete()
+            
+            if admin_id:
+                self.log_admin_action(admin_id, 'COMMUNITY_TASK_CATEGORY_DELETED', {
+                    'category_id': category_id,
+                    'category_name': community_task_category_data.get('category_name', '')
+                })
+            
+            return True
+        except Exception as  e:
+            print(f'Error in delete_community_task_category: {e}')
             raise e

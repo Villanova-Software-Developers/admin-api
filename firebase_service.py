@@ -1334,6 +1334,121 @@ class FirebaseService:
             print(f'Error in get_community_task: {e}')
             raise e
     
+    def update_community_task(self, task_id, updates, admin_id=None):
+        '''Update a community task'''
+        try:
+            task_ref = self.db.collection('community_tasks').document(task_id)
+            task_doc = task_ref.get()
+            
+            if not task_doc.exists:
+                raise Exception('Community task not found')
+            
+            original_task = task_doc.to_dict()
+            
+            if 'participants' in updates: # do not allow updates to these two fields
+                del updates['participants']
+            if 'completed_by' in updates:
+                del updates['completed_by']
+            
+            updates['updated_at'] = firestore.SERVER_TIMESTAMP
+            updates['updated_by'] = admin_id
+            
+            task_ref.update(updates)
+            
+            if admin_id:
+                self.log_admin_action(admin_id, 'COMMUNITY_TASK_UPDATED', {
+                    'title': updates.get('title', original_task.get('title', '')),
+                    'changes': list(updates.keys())
+                })
+            
+            updated_task = task_ref.get().to_dict()
+            updated_task['id'] = task_id
+            
+            if 'created_at' in updated_task and updated_task['created_at']:
+                updated_task['created_at'] = updated_task['created_at'].isoformat()
+            if 'updated_at' in updated_task and updated_task['updated_at']:
+                updated_task['updated_at'] = updated_task['updated_at'].isoformat()
+            if 'deadline' in updated_task and updated_task['deadline']:
+                if isinstance(updated_task['deadline'], datetime.datetime):
+                    updated_task['deadline'] = updated_task['deadline'].isoformat()
+            
+            return updated_task
+        except Exception as e:
+            print(f'Error in update_community_task: {e}')
+            raise e
+    
+    def get_task_categories(self):
+        '''Get all community task categories'''
+        try:
+            categories = []
+            categories_query = self.db.collection('categories').stream()
+            
+            for doc in categories_query:
+                category_data = doc.to_dict()
+                category_data['id'] = doc.id
+                
+                if 'created_at' in category_data and category_data['created_at']:
+                    category_data['created_at'] = category_data['created_at'].isoformat()
+                
+                categories.append(category_data)
+            return categories
+        except Exception as e:
+            print(f'Error in get_task_categories: {e}')
+            raise e
+    
+    def get_task_category(self, category_id):
+        '''Get details of a specific category'''
+        try:
+            category_doc = self.db.collection('categories').document(category_id).get()
+            
+            if not category_doc.exists:
+                raise Exception('Category not found')
+            
+            category_data = category_doc.to_dict()
+            category_data['id'] = category_doc.id
+            
+            if 'created_at' in category_data and category_data['created_at']:
+                category_data['created_at'] = category_data['created_at'].isoformat()
+            
+            return category_data
+        except Exception as e:
+            print(f'Error in get_task_category: {e}')
+            raise e
+    
+    def update_task_category(self, category_id, updates, admin_id):
+        '''Update a community task category'''
+        try:
+            category_ref = self.db.collection('categories').document(category_id)
+            category_doc = category_ref.get()
+            
+            if not category_doc.exists:
+                raise Exception('Category not found')
+            
+            original_category = category_doc.to_dict()
+            
+            updates['updated_at'] = firestore.SERVER_TIMESTAMP
+            
+            category_ref.update(updates)
+            
+            if admin_id:
+                self.log_admin_action(admin_id, 'COMMUNITY_TASK_CATEGORY_UPDATED', {
+                    'category_id': category_id,
+                    'category_name': updates.get('category_name', original_category.get('category_name', ''))
+                    'changes': list(updates.keys())
+                })
+            
+            updated_category = category_ref.get().to_dict()
+            updated_category['id'] = category_id
+            
+            if 'created_at' in updated_category and updated_category['created_at']:
+                updated_category['created_at'] = updated_category['created_at'].isoformat()
+            if 'updated_at' in updated_category and updated_category['updated_at']:
+                updated_category['updated_at'] = updated_category['updated_at'].isoformat()
+            
+            return updated_category
+        except Exception as e:
+            print(f'Error in update_task_category: {e}')
+            raise e
     
     def create_community_task_category(self, category_name, category_type, description, admin_id=None):
         '''
